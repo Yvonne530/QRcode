@@ -3,6 +3,7 @@ package com.example.qrcodeapp
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -10,7 +11,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -26,6 +26,11 @@ import okhttp3.Request
 import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
+
+    companion object {
+        private const val TAG = "QRCodeApp"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -42,11 +47,21 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun QRCodeScreen(modifier: Modifier = Modifier) {
     var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    // 启动协程请求后端接口
-    LaunchedEffect(Unit) {
-        val friendId = fetchFriendId()
-        qrBitmap = generateQRCode(friendId)
+    // 用户ID，可以从登录或本地存储获取
+    val userId = "user123" 
+
+    LaunchedEffect(userId) {
+        try {
+            Log.d("QRCodeApp", "Start fetching friendId for userId=$userId")
+            val friendId = fetchFriendId(userId)
+            Log.d("QRCodeApp", "Received friendId: $friendId")
+            qrBitmap = generateQRCode(friendId)
+        } catch (e: Exception) {
+            Log.e("QRCodeApp", "Failed to fetch friendId", e)
+            errorMessage = e.message
+        }
     }
 
     Column(
@@ -60,21 +75,27 @@ fun QRCodeScreen(modifier: Modifier = Modifier) {
             Image(bitmap = it.asImageBitmap(), contentDescription = "QR Code")
         }
         if (qrBitmap == null) {
-            Text("Loading QR Code...")
+            if (errorMessage != null) {
+                Text("Error: $errorMessage")
+            } else {
+                Text("Loading QR Code...")
+            }
         }
     }
 }
 
-// 网络请求函数
-suspend fun fetchFriendId(): String {
+// 网络请求函数，传入用户ID
+suspend fun fetchFriendId(userId: String): String {
     val client = OkHttpClient()
     val request = Request.Builder()
-        .url("http://10.0.2.2:8080/api/qr/friend") // 模拟器访问本机 Spring Boot
+        .url("http://10.0.2.2:8080/api/friend/getLink?userId=$userId")
         .build()
 
     return withContext(Dispatchers.IO) {
         client.newCall(request).execute().use { response ->
-            val json = JSONObject(response.body!!.string())
+            val body = response.body?.string() ?: throw Exception("Empty response body")
+            Log.d("QRCodeApp", "Raw response: $body")
+            val json = JSONObject(body)
             json.getString("friendId")
         }
     }
